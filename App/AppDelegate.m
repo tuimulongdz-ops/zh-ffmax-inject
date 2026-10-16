@@ -4,21 +4,21 @@
 #import <Foundation/Foundation.h>
 #import <mach/mach.h>
 #import <mach-o/dyld.h>
-#import <dlfcn.h>
 #import <pthread.h>
 #import <math.h>
 #import <signal.h>
 #import <unistd.h>
+#import <string.h>
+#import <stdlib.h>
 
 // ============================================
-// DECLARE TRUOC
+// INTERFACE DECLARE TRUOC
 // ============================================
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property (nonatomic, strong) UIWindow *window;
-@property (nonatomic, strong) UIWindow *menuWindow;
 @end
 
-@interface ZFloatingMenuVC : UIViewController
+@interface ZMainVC : UIViewController
 @end
 
 // ============================================
@@ -30,7 +30,7 @@ extern int proc_pidpath(int pid, void *buffer, uint32_t buffersize);
 static int find_pid(const char *name) {
     int n = proc_listpids(1, 0, NULL, 0);
     if (n <= 0) return 0;
-    pid_t *pids = malloc(n * sizeof(pid_t));
+    pid_t *pids = (pid_t *)malloc(n * sizeof(pid_t));
     proc_listpids(1, 0, pids, n * sizeof(pid_t));
     char path[4096];
     int found = 0;
@@ -91,7 +91,13 @@ static void  wr_b(uintptr_t a, uint8_t v) { wr(a, &v, 1); }
 #define OFF_WALL         0x3B8
 
 typedef struct { float x, y, z; } Vec3;
-static Vec3 rd_v3(uintptr_t a) { Vec3 v; v.x = rd_f(a); v.y = rd_f(a+4); v.z = rd_f(a+8); return v; }
+static Vec3 rd_v3(uintptr_t a) {
+    Vec3 v;
+    v.x = rd_f(a);
+    v.y = rd_f(a + 4);
+    v.z = rd_f(a + 8);
+    return v;
+}
 
 // ============================================
 // CONFIG
@@ -117,7 +123,8 @@ static void antiReport(void) {
     wr_b(g_base + 0x8C2F20, 0x00);
 }
 static void antiAFK(void) {
-    uintptr_t lp = 0; rd(g_base + OFF_LOCAL, &lp, 8);
+    uintptr_t lp = 0;
+    rd(g_base + OFF_LOCAL, &lp, 8);
     if (!lp) return;
     wr_f(lp + 0x2B8, 0.01f);
     wr_f(lp + 0x2BC, 0.01f);
@@ -141,52 +148,88 @@ static void runAntiban(void) {
 // ============================================
 // AIMBOT
 // ============================================
-static float normAng(float a){ while(a>180)a-=360; while(a<-180)a+=360; return a; }
-static float lerpAng(float c,float t,float s){ return normAng(c + norm(),Ang(t-c)*s); }
-static float dist3(Vec ^{3 a,Vec3 b){ float dx=a.x-b
-.x,dy=a.y-b.y,       dz=a.z-b.z; return sqrtf(dx*dx+dy*dy+dz*dz); }
-static void calcToHead(Vec3 l,Vec3 h,float*p,float*y){
-    float dx=h.x-l.x, dy=h.y-l.y, dz=h.z-l.z;
-    float d = sqrtf(dx*dx+dy*dy);
-    *p = normAng(atan2f(dz,d)*180.0f/M_PI);
-    *y = normAng(atan2f(dy,dx)*180.0f/M_PI);
+static float normAng(float a) {
+    while (a > 180.0f) a -= 360.0f;
+    while (a < -180.0f) a += 360.0f;
+    return a;
+}
+static float lerpAng(float c, float t, float s) {
+    return normAng(c + normAng(t - c) * s);
+}
+static float dist3(Vec3 a, Vec3 b) {
+    float dx = a.x - b.x;
+    float dy = a.y - b.y;
+    float dz = a.z - b.z;
+    return sqrtf(dx*dx + dy*dy + dz*dz);
+}
+static void calcToHead(Vec3 l, Vec3 h, float *p, float *y) {
+    float dx = h.x - l.x;
+    float dy = h.y - l.y;
+    float dz = h.z - l.z;
+    float d  = sqrtf(dx*dx + dy*dy);
+    *p = normAng(atan2f(dz, d) * 180.0f / (float)M_PI);
+    *y = normAng(atan2f(dy, dx) * 180.0f / (float)M_PI);
 }
 
 static void runAimbot(void) {
-    uintptr_t lp = 0; rd(g_base + OFF_LOCAL, &lp, 8);
+    uintptr_t lp = 0;
+    rd(g_base + OFF_LOCAL, &lp, 8);
     if (!lp) return;
+
     Vec3 lpos = rd_v3(lp + OFF_POS);
     uintptr_t lrotA = lp + OFF_ROT;
     Vec3 lrot = rd_v3(lrotA);
 
-    uintptr_t pl = 0; rd(g_base + OFF_PLAYER_LIST, &pl, 8);
+    uintptr_t pl = 0;
+    rd(g_base + OFF_PLAYER_LIST, &pl, 8);
     int n = rd_i(g_base + OFF_PLAYER_LIST + 4);
 
-    Vec3 bHead; float bScore = 999999.f; BOOL f = NO;
-    for (int i=0; i<n; i++) {
-        uintptr_t e = pl + i*OFF_SIZE;
+    Vec3 bHead;
+    float bScore = 999999.0f;
+    BOOL found = NO;
+
+    for (int i = 0; i < n; i++) {
+        uintptr_t e = pl + i * OFF_SIZE;
         if (e == lp) continue;
-        if (rd_i(e+OFF_HP) <= 0) continue;
-        if (!rd_b(e+OFF_VIS)) continue;
-        if (rd_b(e+OFF_KN)) continue;
-        Vec3 pp = rd_v3(e+OFF_POS);
-        Vec3 hd = rd_v3(e+OFF_HEAD);
+        if (rd_i(e + OFF_HP) <= 0) continue;
+        if (!rd_b(e + OFF_VIS)) continue;
+        if (rd_b(e + OFF_KN)) continue;
+
+        Vec3 pp = rd_v3(e + OFF_POS);
+        Vec3 hd = rd_v3(e + OFF_HEAD);
+
         float d = dist3(lpos, pp);
         if (d > CFG_range) continue;
-        float tp, ty; calcToHead(lpos, hd, &tp, &ty);
+
+        float tp, ty;
+        calcToHead(lpos, hd, &tp, &ty);
         float diff = fabsf(normAng(ty - lrot.y));
         if (diff > CFG_fov) continue;
-        float s = diff*1.5f + d*0.5f;
-        if (s < bScore) { bScore = s; bHead = hd; f = YES; }
+
+        float s = diff * 1.5f + d * 0.5f;
+        if (s < bScore) {
+            bScore = s;
+            bHead = hd;
+            found = YES;
+        }
     }
-    if (f) {
-        float tp, ty; calcToHead(lpos, bHead, &tp, &ty);
-        wr_f(lrotA,   lerpAng(lrot.x, tp, CFG_smooth));
-        wr_f(lrotA+4, lerpAng(lrot.y, ty, CFG_smooth));
+
+    if (found) {
+        float tp, ty;
+        calcToHead(lpos, bHead, &tp, &ty);
+        wr_f(lrotA,     lerpAng(lrot.x, tp, CFG_smooth));
+        wr_f(lrotA + 4, lerpAng(lrot.y, ty, CFG_smooth));
     }
 }
-static void runSpeed(void){ uintptr_t lp=0; rd(g_base+OFF_LOCAL,&lp,8); if(lp) wr_f(lp+OFF_SPEED, 8.5f); }
-static void runWall(void){ wr_b(g_base+OFF_WALL, 0x01); }
+
+static void runSpeed(void) {
+    uintptr_t lp = 0;
+    rd(g_base + OFF_LOCAL, &lp, 8);
+    if (lp) wr_f(lp + OFF_SPEED, 8.5f);
+}
+static void runWall(void) {
+    wr_b(g_base + OFF_WALL, 0x01);
+}
 
 // ============================================
 // THREAD INJECT
@@ -200,7 +243,9 @@ static void *inject_thread(void *arg) {
             continue;
         }
         if (kill(g_pid, 0) != 0) {
-            g_task = 0; g_base = 0; g_pid = 0;
+            g_task = 0;
+            g_base = 0;
+            g_pid  = 0;
             usleep(500000);
             continue;
         }
@@ -220,176 +265,128 @@ static void *inject_thread(void *arg) {
 
 - (BOOL)application:(UIApplication *)application
 didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    (void)application; (void)launchOptions;
+    (void)application;
+    (void)launchOptions;
 
-    CGRect bounds = CGRectMake(0, 0, 390, 844);
-    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if ([scene isKindOfClass:[UIWindowScene class]]) {
-            UIWindowScene *ws = (UIWindowScene *)scene;
-            bounds = ws.effectiveGeometry.coordinateSpace.bounds;
-            break;
-        }
-    }
-
-    self.window = [[UIWindow alloc] initWithFrame:bounds];
-    self.window.rootViewController = [UIViewController new];
+    self.window = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 390, 844)];
+    self.window.rootViewController = [[ZMainVC alloc] init];
     self.window.backgroundColor = [UIColor blackColor];
     [self.window makeKeyAndVisible];
 
     pthread_t t;
     pthread_create(&t, NULL, inject_thread, NULL);
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0*NSEC_PER_SEC)),
-                   dispatch_get_main_queue [self showFloatingMenu:bounds];
-    });
     return YES;
-}
-
-- (void)showFloatingMenu:(CGRect)bounds {
-    self.menuWindow = [[UIWindow alloc] initWithFrame:bounds];
-    self.menuWindow.windowLevel = UIWindowLevelAlert + 100;
-    self.menuWindow.backgroundColor = [UIColor clearColor];
-    self.menuWindow.rootViewController = [[ZFloatingMenuVC alloc] init];
-    self.menuWindow.hidden = NO;
 }
 @end
 
 // ============================================
-// FLOATING MENU
+// MAIN VIEW CONTROLLER - MENU THUONG
 // ============================================
-@implementation ZFloatingMenuVC {
-    UIView *panel;
-    UIButton *fab;
-    BOOL expanded;
-}
+@implementation ZMainVC
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor clearColor];
-    expanded = YES;
-    [self buildPanel];
-    [self buildFab];
+    self.view.backgroundColor = [UIColor colorWithRed:0.05 green:0.06 blue:0.09 alpha:1.0];
+    [self buildUI];
 }
 
-- (void)buildPanel {
-    CGFloat w = 280, h = 560;
-    panel = [[UIView alloc] initWithFrame:CGRectMake(20, 100, w, h)];
-    panel.backgroundColor = [UIColor colorWithWhite:0.03 alpha:0.88];
-    panel.layer.cornerRadius = 22;
-    panel.layer.borderWidth = 1.5;
-    panel.layer.borderColor = [UIColor colorWithRed:0 green:0.9 blue:1 alpha:1].CGColor;
-    panel.layer.shadowColor = [UIColor cyanColor].CGColor;
-    panel.layer.shadowOpacity = 0.7;
-    panel.layer.shadowRadius = 18;
-    panel.layer.shadowOffset = CGSizeZero;
+- (void)buildUI {
+    CGFloat W = self.view.bounds.size.width;
 
-    UIView *hdr = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 60)];
-    hdr.backgroundColor = [UIColor clearColor];
-    [panel addSubview:hdr];
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(0, 80, W, 32)];
+    title.text = @"Zwilz HLong";
+    title.textAlignment = NSTextAlignmentCenter;
+    title.textColor = [UIColor colorWithRed:0 green:0.9 blue:1 alpha:1];
+    title.font = [UIFont boldSystemFontOfSize:26];
+    [self.view addSubview:title];
 
-    UILabel *t = [[UILabel alloc] initWithFrame:CGRectMake(16, 12, w-60, 24)];
-    t.text = @"Zwilz HLong";
-    t.textColor = [UIColor colorWithRed:0 green:0.9 blue:1 alpha:1];
-    t.font = [UIFont boldSystemFontOfSize:18];
-    [hdr addSubview:t];
+    UILabel *sub = [[UILabel alloc] initWithFrame:CGRectMake(0, 116, W, 20)];
+    sub.text = @"Free Fire MAX Injector";
+    sub.textAlignment = NSTextAlignmentCenter;
+    sub.textColor = [UIColor colorWithWhite:1 alpha:0.5];
+    sub.font = [UIFont systemFontOfSize:12];
+    [self.view addSubview:sub];
 
-    UILabel *s = [[UILabel alloc] initWithFrame:CGRectMake(16, 34, w-60, 16)];
-    s.text = @"FF MAX Inject v1.0";
-    s.textColor = [UIColor colorWithWhite:1 alpha:0.5];
-    s.font = [UIFont systemFontOfSize:10];
-    [hdr addSubview:s];
+    CGFloat y = 170;
+    y = [self addToggleRow:@"Aimbot"       y:y tag:100 def:CFG_aimbot];
+    y = [self addToggleRow:@"Head Lock"    y:y tag:101 def:CFG_headLock];
+    y = [self addToggleRow:@"Anti Ban"     y:y tag:103 def:CFG_antiBan];
+    y = [self addToggleRow:@"Anti Report"  y:y tag:104 def:CFG_antiReport];
+    y = [self addToggleRow:@"Anti AFK"     y:y tag:105 def:CFG_antiAFK];
+    y = [self addToggleRow:@"Anti Kick"    y:y tag:106 def:CFG_antiKick];
+    y = [self addToggleRow:@"Speed"        y:y tag:107 def:CFG_speed];
+    y = [self addToggleRow:@"Wallhack"     y:y tag:108 def:CFG_wallhack];
 
-    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
-    close.frame = CGRectMake(w-50, 16, 34, 34);
-    [close setTitle:@"—" forState:UIControlStateNormal];
-    [close setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    close.titleLabel.font = [UIFont boldSystemFontOfSize:22];
-    [close addTarget:self action:@selector(collapse) forControlEvents:UIControlEventTouchUpInside];
-    [hdr addSubview:close];
-
-    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]
-                                    initWithTarget:self action:@selector(onPan:)];
-    [hdr addGestureRecognizer:pan];
-
-    CGFloat y = 68;
-    y = [self addToggle:@"Aimbot"       y:y tag:100 def:CFG_aimbot];
-    y = [self addToggle:@"Head Lock"    y:y tag:101 def:CFG_headLock];
-    y = [self addToggle:@"Anti Ban"     y:y tag:103 def:CFG_antiBan];
-    y = [self addToggle:@"Anti Report"  y:y tag:104 def:CFG_antiReport];
-    y = [self addToggle:@"Anti AFK"     y:y tag:105 def:CFG_antiAFK];
-    y = [self addToggle:@"Anti Kick"    y:y tag:106 def:CFG_antiKick];
-    y = [self addToggle:@"Speed"        y:y tag:107 def:CFG_speed];
-    y = [self addToggle:@"Wallhack"     y:y tag:108 def:CFG_wallhack];
-
-    UILabel *fl = [[UILabel alloc] initWithFrame:CGRectMake(16, y+8, 100, 16)];
+    UILabel *fl = [[UILabel alloc] initWithFrame:CGRectMake(24, y + 14, 120, 16)];
     fl.text = @"FOV";
     fl.textColor = [UIColor colorWithWhite:1 alpha:0.8];
-    fl.font = [UIFont systemFontOfSize:11];
-    [panel addSubview:fl];
+    fl.font = [UIFont systemFontOfSize:12];
+    [self.view addSubview:fl];
 
-    UISlider *fs = [[UISlider alloc] initWithFrame:CGRectMake(16, y+26, w-32, 20)];
-    fs.minimumValue = 30; fs.maximumValue = 360;
+    UISlider *fs = [[UISlider alloc] initWithFrame:CGRectMake(24, y + 32, W - 48, 24)];
+    fs.minimumValue = 30;
+    fs.maximumValue = 360;
     fs.value = CFG_fov;
     fs.tintColor = [UIColor cyanColor];
     [fs addTarget:self action:@selector(onFov:) forControlEvents:UIControlEventValueChanged];
-    [panel addSubview:fs];
+    [self.view addSubview:fs];
 
-    UILabel *sl = [[UILabel alloc] initWithFrame:CGRectMake(16, y+54, 100, 16)];
+    UILabel *sl = [[UILabel alloc] initWithFrame:CGRectMake(24, y + 62, 120, 16)];
     sl.text = @"Smooth";
     sl.textColor = [UIColor colorWithWhite:1 alpha:0.8];
-    sl.font = [UIFont systemFontOfSize:11];
-    [panel addSubview:sl];
+    sl.font = [UIFont systemFontOfSize:12];
+    [self.view addSubview:sl];
 
-    UISlider *ss = [[UISlider alloc] initWithFrame:CGRectMake(16, y+72, w-32, 20)];
-    ss.minimumValue = 0.05; ss.maximumValue = 1.0;
+    UISlider *ss = [[UISlider alloc] initWithFrame:CGRectMake(24, y + 80, W - 48, 24)];
+    ss.minimumValue = 0.05;
+    ss.maximumValue = 1.0;
     ss.value = CFG_smooth;
     ss.tintColor = [UIColor cyanColor];
     [ss addTarget:self action:@selector(onSmooth:) forControlEvents:UIControlEventValueChanged];
-    [panel addSubview:ss];
+    [self.view addSubview:ss];
 
-    [self.view addSubview:panel];
+    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+    btn.frame = CGRectMake(24, y + 130, W - 48, 52);
+    [btn setTitle:@"INJECT NOW" forState:UIControlStateNormal];
+    [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    btn.titleLabel.font = [UIFont boldSystemFontOfSize:16];
+    btn.backgroundColor = [UIColor colorWithRed:0 green:0.7 blue:1 alpha:1];
+    btn.layer.cornerRadius = 14;
+    btn.layer.shadowColor = [UIColor cyanColor].CGColor;
+    btn.layer.shadowOpacity = 0.7;
+    btn.layer.shadowRadius = 12;
+    [btn addTarget:self action:@selector(onInject) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:btn];
+
+    UILabel *hint = [[UILabel alloc] initWithFrame:CGRectMake(0, y + 192, W, 18)];
+    hint.text = @"Mo Free Fire MAX truoc, sau do nhan INJECT";
+    hint.textAlignment = NSTextAlignmentCenter;
+    hint.textColor = [UIColor colorWithWhite:1 alpha:0.4];
+    hint.font = [UIFont systemFontOfSize:11];
+    [self.view addSubview:hint];
 }
 
-- (void)buildFab {
-    fab = [UIButton buttonWithType:UIButtonTypeCustom];
-    fab.frame = CGRectMake(20, 100, 56, 56);
-    fab.layer.cornerRadius = 28;
-    fab.backgroundColor = [UIColor colorWithRed:0 green:0.9 blue:1 alpha:1];
-    [fab setTitle:@"ZH" forState:UIControlStateNormal];
-    [fab setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    fab.titleLabel.font = [UIFont boldSystemFontOfSize:18];
-    fab.layer.shadowColor = [UIColor cyanColor].CGColor;
-    fab.layer.shadowOpacity = 0.8;
-    fab.layer.shadowRadius = 12;
-    [fab addTarget:self action:@selector(expand) forControlEvents:UIControlEventTouchUpInside];
-    fab.hidden = YES;
-
-    UIPanGestureRecognizer *p = [[UIPanGestureRecognizer alloc]
-                                  initWithTarget:self action:@selector(onPan:)];
-    [fab addGestureRecognizer:p];
-    [self.view addSubview:fab];
-}
-
-- (CGFloat)addToggle:(NSString *)name y:(CGFloat)y tag:(NSInteger)tag def:(BOOL)def {
-    UIView *row = [[UIView alloc] initWithFrame:CGRectMake(12, y, panel.bounds.size.width-24, 34)];
+- (CGFloat)addToggleRow:(NSString *)name y:(CGFloat)y tag:(NSInteger)tag def:(BOOL)def {
+    CGFloat W = self.view.bounds.size.width;
+    UIView *row = [[UIView alloc] initWithFrame:CGRectMake(16, y, W - 32, 42)];
     row.backgroundColor = [UIColor colorWithWhite:1 alpha:0.06];
-    row.layer.cornerRadius = 9;
+    row.layer.cornerRadius = 12;
 
-    UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(14, 0, 180, 34)];
+    UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(18, 0, 200, 42)];
     l.text = name;
     l.textColor = [UIColor whiteColor];
-    l.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+    l.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
     [row addSubview:l];
 
-    UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectMake(row.bounds.size.width-58, 2, 51, 31)];
+    UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectMake(W - 32 - 58, 5, 51, 31)];
     sw.onTintColor = [UIColor colorWithRed:0 green:0.9 blue:1 alpha:1];
     sw.tag = tag;
     sw.on = def;
     [sw addTarget:self action:@selector(onSw:) forControlEvents:UIControlEventValueChanged];
     [row addSubview:sw];
 
-    [panel addSubview:row];
-    return y + 38;
+    [self.view addSubview:row];
+    return y + 50;
 }
 
 - (void)onSw:(UISwitch *)s {
@@ -405,35 +402,30 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
         default: break;
     }
 }
+
 - (void)onFov:(UISlider *)s { CFG_fov = s.value; }
 - (void)onSmooth:(UISlider *)s { CFG_smooth = s.value; }
 
-- (void)onPan:(UIPanGestureRecognizer *)g {
-    UIView *v = g.view;
-    CGPoint t = [g translationInView:self.view];
-    v.center = CGPointMake(v.center.x + t.x, v.center.y + t.y);
-    [g setTranslation:CGPointZero inView:self.view];
-}
+- (void)onInject {
+    g_task = 0;
+    g_base = 0;
+    g_pid  = 0;
 
-- (void)collapse {
-    [UIView animateWithDuration:0.25 animations:^{
-        self->panel.alpha = 0;
-        self->panel.transform = CGAffineTransformMakeScale(0.3, 0.3);
-    } completion:^(BOOL f) {
-        self->panel.hidden = YES;
-        self->fab.hidden = NO;
-        self->expanded = NO;
-    }];
-}
-- (void)expand {
-    panel.hidden = NO;
-    [UIView animateWithDuration:0.25 animations:^{
-        self->panel.alpha = 1;
-        self->panel.transform = CGAffineTransformIdentity;
-    } completion:^(BOOL f) {
-        self->fab.hidden = YES;
-        self->expanded = YES;
-    }];
+    NSString *msg;
+    if (attach_task()) {
+        msg = [NSString stringWithFormat:@"Da inject vao Free Fire MAX (PID %d)", g_pid];
+    } else {
+        msg = @"Khong tim thay Free Fire MAX. Hay mo game truoc!";
+    }
+
+    UIAlertController *a = [UIAlertController
+                            alertControllerWithTitle:@"Zwilz HLong"
+                            message:msg
+                            preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"OK"
+                                          style:UIAlertActionStyleDefault
+                                        handler:nil]];
+    [self presentViewController:a animated:YES completion:nil];
 }
 @end
 
