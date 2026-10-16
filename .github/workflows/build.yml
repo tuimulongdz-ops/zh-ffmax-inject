@@ -1,5 +1,5 @@
 
-name: Build FF MAX Inject IPA
+name: Build ZH FF MAX Menu Inject
 
 on:
   push:
@@ -13,11 +13,23 @@ jobs:
       - uses: actions/checkout@v4
       - name: Setup Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+      - name: Build binary
+        run: |
+          xcrun -sdk iphoneos clang -arch arm64 \
+            -framework UIKit -framework Foundation \
+            -framework CoreGraphics \
+            -o App/ZHInject App/AppDelegate.m
+      - name: Ky entitlements
+        run: |
+          codesign --force --sign - \
+            --entitlements entitlements.plist \
+            App/ZHInject
       - name: Tao Payload
         run: |
           mkdir -p Payload
           cp -r App Payload/ZHInject.app
           cp Info.plist Payload/ZHInject.app/
+          cp entitlements.plist Payload/ZHInject.app/
       - name: Nen IPA
         run: zip -r ZHInject.ipa Payload/
       - uses: actions/upload-artifact@v4
