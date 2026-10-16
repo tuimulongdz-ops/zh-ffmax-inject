@@ -1,0 +1,227 @@
+
+local ffi = require("ffi")
+local memory = require("memory")
+local touch = require("touch")
+
+ffi.cdef[[
+    typedef struct { float x, y, z; } Vector3;
+    typedef struct {
+        Vector3 pos;
+        Vector3 rot;
+        Vector3 head;
+        int hp;
+        int team;
+        bool vis;
+        bool kn;
+        int ping;
+        int level;
+    } Player;
+]]
+
+-- Package name
+local PKG = "com.dts.freefiremax"
+
+-- Duong dan cache goc de inject
+local CACHE_PATH = "/var/mobile/Containers/Data/Application/" .. PKG ..
+                   "/Documents/contentcache/cache_res.GkLlYqzsX4AtTdE55sDMRh9sJOI~3D.txt"
+
+local pid = memory.getPid(PKG)
+if pid == 0 then return end
+local base = memory.getBaseAddress(pid)
+if base == 0 then return end
+
+-- Offset base (cap nhat theo phien ban FF MAX)
+local OFF = {
+    PLAYER_LIST = 0x7C4E1C,
+    LOCAL       = 0x7C4E20,
+    SIZE        = 0x1B0,
+    POS         = 0x48,
+    ROT         = 0x54,
+    HEAD        = 0x88,
+    HP          = 0xA0,
+    TEAM        = 0xA4,
+    VIS         = 0xA8,
+    KN          = 0xAC,
+    PING        = 0xB0,
+    SPEED       = 0x2A4,
+    WALL        = 0x3B8,
+}
+
+-- Config thay doi qua menu
+local CFG = {
+    aimbot      = false,
+    head_lock   = true,
+    fov         = 180.0,
+    smooth      = 0.30,
+    range       = 450.0,
+    trigger     = false,
+    anti_ban    = true,
+    anti_report = true,
+    anti_afk    = true,
+    anti_kick   = true,
+    silent_aim  = true,
+    no_recoil   = false,
+    rapid_fire  = false,
+    speed       = false,
+    wallhack    = false,
+}
+
+-- ============================
+-- ANTIBAN MODULE
+-- ============================
+
+-- 1. Anti report: reset counter report moi frame
+local function antiReport()
+    local lp = memory.readPointer(base + OFF.LOCAL)
+    if lp == 0 then return end
+    -- Reset report counter ve 0
+    memory.writeInt(base + 0x8C2F10, 0)
+    memory.writeInt(base + 0x8C2F14, 0)
+    -- Xoa flag suspicious movement
+    memory.writeByte(base + 0x8C2F20, 0x00)
+end
+
+-- 2. Anti AFK: fake input de khong bi kick
+local function antiAFK()
+    local lp = memory.readPointer(base + OFF.LOCAL)
+    if lp == 0 then return end
+    memory.writeFloat(lp + 0x2B8, 0.01)
+    memory.writeFloat(lp + 0x2BC, 0.01)
+end
+
+-- 3. Anti kick: ghi de violation flag
+local function antiKick()
+    memory.writeByte(base + 0x8C3010, 0x00)
+    memory.writeByte(base + 0x8C3011, 0x00)
+    memory.writeByte(base + 0x8C3012, 0x00)
+end
+
+-- 4. Anti detection: xoa debugger + integrity check
+local function antiDetection()
+    -- Xoa memory integrity check
+    memory.writeInt(base + 0x8C4020, 0)
+    -- Fake legitimate process name
+    memory.writeByte(base + 0x8C4028, 0x01)
+end
+
+-- 5. Random delay giao dong de khong bi pattern detect
+local function randomizeDelay()
+    local d = math.random(4, 12)
+    memory.sleep(d)
+end
+
+local function runAntiban()
+    if CFG.anti_report then antiReport() end
+    if CFG.anti_afk    then antiAFK()    end
+    if CFG.anti_kick   then antiKick()   end
+    antiDetection()
+end
+
+-- ============================
+-- AIMBOT MODULE
+-- ============================
+
+local function readV3(a)
+    local v = ffi.new("Vector3")
+    v.x = memory.readFloat(a)
+    v.y = memory.readFloat(a + 4)
+    v.z = memory.readFloat(a + 8)
+    return v
+end
+
+local function normAng(a)
+    while a > 180 do a = a - 360 end
+    while a < -180 do a = a + 360 end
+    return a
+end
+
+local function calcToHead(localPos, headPos)
+    local dx = headPos.x - localPos.x
+    local dy = headPos.y - localPos.y
+    local dz = headPos.z - localPos.z
+    local dist = math.sqrt(dx*dx + dy*dy)
+    return normAng(math.atan2(dz, dist) * 180 / math.pi),
+           normAng(math.atan2(dy, dx) * 180 / math.pi)
+end
+
+local function lerp(c, t, s) return normAng(c + normAng(t - c) * s) end
+
+local function dist3(a, b)
+    local dx, dy, dz = a.x-b.x, a.y-b.y, a.z-b.z
+    return math.sqrt(dx*dx + dy*dy + dz*dz)
+end
+
+local function getPlayers()
+    local list = {}
+    local lp = memory.readPointer(base + OFF.LOCAL)
+    local pl = memory.readPointer(base + OFF.PLAYER_LIST)
+    local n  = memory.readInt(base + OFF.PLAYER_LIST + 4)
+    for i = 0, n - 1 do
+        local e = pl + i * OFF.SIZE
+        if e ~= lp then
+            table.insert(list, {
+                pos  = readV3(e + OFF.POS),
+                head = readV3(e + OFF.HEAD),
+                hp   = memory.readInt(e + OFF.HP),
+                team = memory.readInt(e + OFF.TEAM),
+                vis  = memory.readBool(e + OFF.VIS),
+                kn   = memory.readBool(e + OFF.KN),
+                ping = memory.readInt(e + OFF.PING),
+            })
+        end
+    end
+    return list
+end
+
+local function findBest(lpos, lrot, list)
+    local best, score = nil, math.huge
+    for _, p in ipairs(list) do
+        if p.hp > 0 and p.vis and not p.kn then
+            local d = dist3(lpos, p.pos)
+            if d <= CFG.range then
+                local _, ty = calcToHead(lpos, p.head)
+                local diff = math.abs(normAng(ty - lrot.y))
+                if diff <= CFG.fov then
+                    local s = diff * 1.5 + d * 0.5
+                    if s < score then score = s; best = p end
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- ============================
+-- MAIN LOOP
+-- ============================
+
+while true do
+    if CFG.anti_ban then runAntiban() end
+
+    if CFG.aimbot then
+        local lp = memory.readPointer(base + OFF.LOCAL)
+        if lp ~= 0 then
+            local lpos = readV3(lp + OFF.POS)
+            local lrotAddr = lp + OFF.ROT
+            local lrot = readV3(lrotAddr)
+            local tgt = findBest(lpos, lrot, getPlayers())
+            if tgt then
+                local tp, ty = calcToHead(lpos, tgt.head)
+                memory.writeFloat(lrotAddr,     lerp(lrot.x, tp, CFG.smooth))
+                memory.writeFloat(lrotAddr + 4, lerp(lrot.y, ty, CFG.smooth))
+                if CFG.trigger then
+                    touch.down(0, 540, 1200); memory.sleep(40); touch.up(0)
+                end
+            end
+        end
+    end
+
+    if CFG.speed then
+        local lp = memory.readPointer(base + OFF.LOCAL)
+        if lp ~= 0 then memory.writeFloat(lp + OFF.SPEED, 8.5) end
+    end
+
+    if CFG.wallhack then memory.writeByte(base + OFF.WALL, 0x01) end
+
+    randomizeDelay()
+end
