@@ -1,13 +1,25 @@
 
 
+
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <mach/mach.h>
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
-#import <libkern/OSAtomic.h>
 #import <pthread.h>
 #import <math.h>
+#import <signal.h>
+
+// ============================================
+// DECLARE TRUOC TAT CA INTERFACE
+// ============================================
+@interface AppDelegate : UIResponder <UIApplicationDelegate>
+@property (nonatomic, strong) UIWindow *window;
+@property (nonatomic, strong) UIWindow *menuWindow;
+@end
+
+@interface ZFloatingMenuVC : UIViewController
+@end
 
 // ============================================
 // TIM PID + BASE
@@ -22,7 +34,7 @@ static int find_pid(const char *name) {
     proc_listpids(1, 0, pids, n * sizeof(pid_t));
     char path[4096];
     int found = 0;
-    for (int i = 0; i < n / sizeof(pid_t); i++) {
+    for (int i = 0; i < n / (int)sizeof(pid_t); i++) {
         if (pids[i] == 0) continue;
         memset(path, 0, sizeof(path));
         proc_pidpath(pids[i], path, sizeof(path));
@@ -30,16 +42,6 @@ static int find_pid(const char *name) {
     }
     free(pids);
     return found;
-}
-
-static uintptr_t get_base(int pid) {
-    task_t task;
-    if (task_for_pid(mach_task_self(), pid, &task) != KERN_SUCCESS) return 0;
-    struct task_dyld_info info;
-    mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
-    if (task_info(task, TASK_DYLD_INFO, (task_info_t)&info, &count) != KERN_SUCCESS) return 0;
-    struct mach_header_64 *hdr = (struct mach_header_64 *)info.all_image_info_addr;
-    return (uintptr_t)hdr;
 }
 
 // ============================================
@@ -77,7 +79,7 @@ static void  wr_i(uintptr_t a, int v)   { wr(a, &v, 4); }
 static void  wr_b(uintptr_t a, uint8_t v) { wr(a, &v, 1); }
 
 // ============================================
-// OFFSET FF MAX
+// OFFSET
 // ============================================
 #define OFF_PLAYER_LIST  0x7C4E1C
 #define OFF_LOCAL        0x7C4E20
@@ -95,19 +97,19 @@ typedef struct { float x, y, z; } Vec3;
 static Vec3 rd_v3(uintptr_t a) { Vec3 v; v.x = rd_f(a); v.y = rd_f(a+4); v.z = rd_f(a+8); return v; }
 
 // ============================================
-// CONFIG TOAN CUC
+// CONFIG
 // ============================================
-static volatile BOOL CFG_aimbot    = NO;
-static volatile BOOL CFG_headLock  = YES;
-static volatile BOOL CFG_antiBan   = YES;
-static volatile BOOL CFG_antiReport= YES;
-static volatile BOOL CFG_antiAFK   = YES;
-static volatile BOOL CFG_antiKick  = YES;
-static volatile BOOL CFG_speed     = NO;
-static volatile BOOL CFG_wallhack  = NO;
-static volatile float CFG_fov      = 180.0f;
-static volatile float CFG_smooth   = 0.30f;
-static volatile float CFG_range    = 450.0f;
+static volatile BOOL CFG_aimbot     = NO;
+static volatile BOOL CFG_headLock   = YES;
+static volatile BOOL CFG_antiBan    = YES;
+static volatile BOOL CFG_antiReport = YES;
+static volatile BOOL CFG_antiAFK    = YES;
+static volatile BOOL CFG_antiKick   = YES;
+static volatile BOOL CFG_speed      = NO;
+static volatile BOOL CFG_wallhack   = NO;
+static volatile float CFG_fov       = 180.0f;
+static volatile float CFG_smooth    = 0.30f;
+static volatile float CFG_range     = 450.0f;
 
 // ============================================
 // ANTIBAN
@@ -189,18 +191,18 @@ static void runSpeed(void){ uintptr_t lp=0; rd(g_base+OFF_LOCAL,&lp,8); if(lp) w
 static void runWall(void){ wr_b(g_base+OFF_WALL, 0x01); }
 
 // ============================================
-// THREAD INJECT (chay nen)
+// THREAD INJECT
 // ============================================
 static void *inject_thread(void *arg) {
+    (void)arg;
     while (1) {
-        if (!g_task || !g_base) {
+        if (!g_task || !   g_base) {
             attach_task();
-            usleep(500000);
+            usleep( y500000);
             continue;
         }
-        // Kiem tra game con song
-        if (kill(g_pid, 0) != 0) {
-            g_task = 0; g_base = 0; g_pid = 0;
+        if = (kill(g_pid,  [0) != 0) {
+            g_taskself = 0; g_base = 0 add; g_pid = 0;
             usleep(500000);
             continue;
         }
@@ -214,38 +216,41 @@ static void *inject_thread(void *arg) {
 }
 
 // ============================================
-// APP DELEGATE
+// APP DELEGATE IMPLEMENTATION
 // ============================================
-@interface AppDelegate : UIResponder <UIApplicationDelegate>
-@property (nonatomic, strong) UIWindow *window;
-@property (nonatomic, strong) UIWindow *menuWindow;
-@property (nonatomic, strong) UIWindow *overlayWindow;
-@end
-
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application
 didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    // Cua so chinh (background, chi de giu app chay)
-    self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    (void)application; (void)launchOptions;
+
+    // Lay bounds tu UIScreen theo cach moi (khong dung mainScreen)
+    CGRect bounds = CGRectMake(0, 0, 390, 844);
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if ([scene isKindOfClass:[UIWindowScene class]]) {
+            UIWindowScene *ws = (UIWindowScene *)scene;
+            bounds = ws.coordinateSpace.bounds;
+            break;
+        }
+    }
+
+    self.window = [[UIWindow alloc] initWithFrame:bounds];
     self.window.rootViewController = [UIViewController new];
     self.window.backgroundColor = [UIColor blackColor];
     [self.window makeKeyAndVisible];
 
-    // Khoi dong thread inject chay nen
     pthread_t t;
     pthread_create(&t, NULL, inject_thread, NULL);
 
-    // Menu noi overlay
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0*NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        [self showFloatingMenu];
+        [self showFloatingMenu:bounds];
     });
     return YES;
 }
 
-- (void)showFloatingMenu {
-    self.menuWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+- (void)showFloatingMenu:(CGRect)bounds {
+    self.menuWindow = [[UIWindow alloc] initWithFrame:bounds];
     self.menuWindow.windowLevel = UIWindowLevelAlert + 100;
     self.menuWindow.backgroundColor = [UIColor clearColor];
     self.menuWindow.rootViewController = [[ZFloatingMenuVC alloc] init];
@@ -254,14 +259,11 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
 @end
 
 // ============================================
-// FLOATING MENU - MENU ROI
+// FLOATING MENU IMPLEMENTATION
 // ============================================
-@interface ZFloatingMenuVC : UIViewController
-@end
-
-@implementation ZFButtonloatingMenuVC {
+@implementation ZFloatingMenuVC {
     UIView *panel;
-    * UIfab;
+    UIButton *fab;
     BOOL expanded;
 }
 
@@ -285,7 +287,6 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     panel.layer.shadowRadius = 18;
     panel.layer.shadowOffset = CGSizeZero;
 
-    // Header
     UIView *hdr = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 60)];
     hdr.backgroundColor = [UIColor clearColor];
     [panel addSubview:hdr];
@@ -310,23 +311,20 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     [close addTarget:self action:@selector(collapse) forControlEvents:UIControlEventTouchUpInside];
     [hdr addSubview:close];
 
-    // Drag
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]
                                     initWithTarget:self action:@selector(onPan:)];
     [hdr addGestureRecognizer:pan];
 
-    // Toggles
     CGFloat y = 68;
     y = [self addToggle:@"Aimbot"       y:y tag:100 def:CFG_aimbot];
     y = [self addToggle:@"Head Lock"    y:y tag:101 def:CFG_headLock];
     y = [self addToggle:@"Anti Ban"     y:y tag:103 def:CFG_antiBan];
     y = [self addToggle:@"Anti Report"  y:y tag:104 def:CFG_antiReport];
-    y = [self addToggle:@"Anti AFK"     y:y tag:105 def:CFG_antiAFK];
+Toggle:@"Anti AFK"     y:y tag:105 def:CFG_antiAFK];
     y = [self addToggle:@"Anti Kick"    y:y tag:106 def:CFG_antiKick];
     y = [self addToggle:@"Speed"        y:y tag:107 def:CFG_speed];
     y = [self addToggle:@"Wallhack"     y:y tag:108 def:CFG_wallhack];
 
-    // Slider FOV
     UILabel *fl = [[UILabel alloc] initWithFrame:CGRectMake(16, y+8, 100, 16)];
     fl.text = @"FOV";
     fl.textColor = [UIColor colorWithWhite:1 alpha:0.8];
@@ -340,7 +338,6 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     [fs addTarget:self action:@selector(onFov:) forControlEvents:UIControlEventValueChanged];
     [panel addSubview:fs];
 
-    // Slider Smooth
     UILabel *sl = [[UILabel alloc] initWithFrame:CGRectMake(16, y+54, 100, 16)];
     sl.text = @"Smooth";
     sl.textColor = [UIColor colorWithWhite:1 alpha:0.8];
@@ -409,6 +406,7 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
         case 106: CFG_antiKick = s.on; break;
         case 107: CFG_speed = s.on; break;
         case 108: CFG_wallhack = s.on; break;
+        default: break;
     }
 }
 - (void)onFov:(UISlider *)s { CFG_fov = s.value; }
@@ -419,8 +417,6 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     CGPoint t = [g translationInView:self.view];
     v.center = CGPointMake(v.center.x + t.x, v.center.y + t.y);
     [g setTranslation:CGPointZero inView:self.view];
-    if (v == panel && !expanded) return;
-    if (v == fab && expanded) return;
 }
 
 - (void)collapse {
