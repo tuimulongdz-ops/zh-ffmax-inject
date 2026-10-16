@@ -15,6 +15,7 @@ jobs:
         run: |
           mkdir -p App Payload/ZHAim.app
           xcrun -sdk iphoneos swiftc -target arm64-apple-ios13.0 \
+            -parse-as-library \
             -framework UIKit -framework SwiftUI -framework Foundation \
             -framework AVFoundation \
             -o App/ZHAim App/AppDelegate.swift
