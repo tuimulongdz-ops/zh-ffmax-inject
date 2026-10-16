@@ -1,6 +1,5 @@
 
 
-
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <mach/mach.h>
@@ -9,9 +8,10 @@
 #import <pthread.h>
 #import <math.h>
 #import <signal.h>
+#import <unistd.h>
 
 // ============================================
-// DECLARE TRUOC TAT CA INTERFACE
+// DECLARE TRUOC
 // ============================================
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property (nonatomic, strong) UIWindow *window;
@@ -22,7 +22,7 @@
 @end
 
 // ============================================
-// TIM PID + BASE
+// PID + BASE
 // ============================================
 extern int proc_listpids(uint32_t type, uint32_t typeinfo, void *buffer, int buffersize);
 extern int proc_pidpath(int pid, void *buffer, uint32_t buffersize);
@@ -44,9 +44,6 @@ static int find_pid(const char *name) {
     return found;
 }
 
-// ============================================
-// DOC / GHI BO NHO
-// ============================================
 static int g_pid = 0;
 static uintptr_t g_base = 0;
 static task_t g_task = 0;
@@ -145,8 +142,9 @@ static void runAntiban(void) {
 // AIMBOT
 // ============================================
 static float normAng(float a){ while(a>180)a-=360; while(a<-180)a+=360; return a; }
-static float lerpAng(float c,float t,float s){ return normAng(c + normAng(t-c)*s); }
-static float dist3(Vec3 a,Vec3 b){ float dx=a.x-b.x,dy=a.y-b.y,dz=a.z-b.z; return sqrtf(dx*dx+dy*dy+dz*dz); }
+static float lerpAng(float c,float t,float s){ return normAng(c + norm(),Ang(t-c)*s); }
+static float dist3(Vec ^{3 a,Vec3 b){ float dx=a.x-b
+.x,dy=a.y-b.y,       dz=a.z-b.z; return sqrtf(dx*dx+dy*dy+dz*dz); }
 static void calcToHead(Vec3 l,Vec3 h,float*p,float*y){
     float dx=h.x-l.x, dy=h.y-l.y, dz=h.z-l.z;
     float d = sqrtf(dx*dx+dy*dy);
@@ -196,19 +194,19 @@ static void runWall(void){ wr_b(g_base+OFF_WALL, 0x01); }
 static void *inject_thread(void *arg) {
     (void)arg;
     while (1) {
-        if (!g_task || !   g_base) {
+        if (!g_task || !g_base) {
             attach_task();
-            usleep( y500000);
-            continue;
-        }
-        if = (kill(g_pid,  [0) != 0) {
-            g_taskself = 0; g_base = 0 add; g_pid = 0;
             usleep(500000);
             continue;
         }
-        if (CFG_antiBan) runAntiban();
-        if (CFG_aimbot)  runAimbot();
-        if (CFG_speed)   runSpeed();
+        if (kill(g_pid, 0) != 0) {
+            g_task = 0; g_base = 0; g_pid = 0;
+            usleep(500000);
+            continue;
+        }
+        if (CFG_antiBan)  runAntiban();
+        if (CFG_aimbot)   runAimbot();
+        if (CFG_speed)    runSpeed();
         if (CFG_wallhack) runWall();
         usleep(8000);
     }
@@ -216,7 +214,7 @@ static void *inject_thread(void *arg) {
 }
 
 // ============================================
-// APP DELEGATE IMPLEMENTATION
+// APP DELEGATE
 // ============================================
 @implementation AppDelegate
 
@@ -224,12 +222,11 @@ static void *inject_thread(void *arg) {
 didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     (void)application; (void)launchOptions;
 
-    // Lay bounds tu UIScreen theo cach moi (khong dung mainScreen)
     CGRect bounds = CGRectMake(0, 0, 390, 844);
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
         if ([scene isKindOfClass:[UIWindowScene class]]) {
             UIWindowScene *ws = (UIWindowScene *)scene;
-            bounds = ws.coordinateSpace.bounds;
+            bounds = ws.effectiveGeometry.coordinateSpace.bounds;
             break;
         }
     }
@@ -243,8 +240,7 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     pthread_create(&t, NULL, inject_thread, NULL);
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0*NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        [self showFloatingMenu:bounds];
+                   dispatch_get_main_queue [self showFloatingMenu:bounds];
     });
     return YES;
 }
@@ -259,7 +255,7 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
 @end
 
 // ============================================
-// FLOATING MENU IMPLEMENTATION
+// FLOATING MENU
 // ============================================
 @implementation ZFloatingMenuVC {
     UIView *panel;
@@ -320,7 +316,7 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     y = [self addToggle:@"Head Lock"    y:y tag:101 def:CFG_headLock];
     y = [self addToggle:@"Anti Ban"     y:y tag:103 def:CFG_antiBan];
     y = [self addToggle:@"Anti Report"  y:y tag:104 def:CFG_antiReport];
-Toggle:@"Anti AFK"     y:y tag:105 def:CFG_antiAFK];
+    y = [self addToggle:@"Anti AFK"     y:y tag:105 def:CFG_antiAFK];
     y = [self addToggle:@"Anti Kick"    y:y tag:106 def:CFG_antiKick];
     y = [self addToggle:@"Speed"        y:y tag:107 def:CFG_speed];
     y = [self addToggle:@"Wallhack"     y:y tag:108 def:CFG_wallhack];
