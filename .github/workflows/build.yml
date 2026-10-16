@@ -8,35 +8,42 @@ on:
 
 jobs:
   build:
-ỏ    runs-on: macos-latest
-    ( steps:
-      - uses: actions/checkout@giv4
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Setup Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-      - name: Tao Xcode project
+
+      - name: Tao cau truc thu muc
         run: |
-          mkdir -p ZH.xcodeproj
-          echo "Xcode project se build binary bang swiftc truc tiep"
+          mkdir -p App
+          mkdir -p Payload/ZHInject.app
+
       - name: Build Swift binary
         run: |
           xcrun -sdk iphoneos swiftc -target arm64-apple-ios13.0 \
             -framework UIKit -framework SwiftUI -framework Foundation \
             -o App/ZHInject App/AppDelegate.swift
+
       - name: Ky entitlements
         run: |
           codesign --force --sign - \
             --entitlements entitlements.plist \
             App/ZHInject
-      - name: Tao Payload
+
+      - name: Dong goi Payload
         run: |
-          mkdir -p Payload/ZHInject.app
           cp App/ZHInject Payload/ZHInject.app/
           cp Info.plist Payload/ZHInject.app/
+          cp entitlements.plist Payload/ZHInject.app/
           chmod +x Payload/ZHInject.app/ZHInject
+
       - name: Nen IPA
         run: zip -r ZHInject.ipa Payload/
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
         with:
           name: ZHInject-IPA
-          version: 8.0.0
           path: ZHInject.ipa
