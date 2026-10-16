@@ -1,5 +1,5 @@
 
-name: Build ZH FF MAX Menu
+name: Build ZH Swift IPA
 
 on:
   push:
@@ -8,14 +8,20 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build binary
+ỏ    runs-on: macos-latest
+    ( steps:
+      - uses: actions/checkout@giv4
+      - name: Setup Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+      - name: Tao Xcode project
         run: |
-          xcrun -sdk iphoneos clang -arch arm64 -O2 \
-            -framework UIKit -framework Foundation -framework CoreGraphics \
-            -o App/ZHInject App/AppDelegate.m
+          mkdir -p ZH.xcodeproj
+          echo "Xcode project se build binary bang swiftc truc tiep"
+      - name: Build Swift binary
+        run: |
+          xcrun -sdk iphoneos swiftc -target arm64-apple-ios13.0 \
+            -framework UIKit -framework SwiftUI -framework Foundation \
+            -o App/ZHInject App/AppDelegate.swift
       - name: Ky entitlements
         run: |
           codesign --force --sign - \
@@ -32,4 +38,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ZHInject-IPA
+          version: 8.0.0
           path: ZHInject.ipa
