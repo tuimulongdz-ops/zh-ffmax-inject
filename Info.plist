@@ -21,5 +21,6 @@
         <string>processing</string>
     </array>
     <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
+    <key>UILaunchStoryboardName</key><string></string>
 </dict>
 </plist>
